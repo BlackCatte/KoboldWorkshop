@@ -153,6 +153,46 @@ class KoboldCPPClient:
             logger.error(f"Error during generation: {e}")
             return None
     
+
+    async def get_generation_history(self, limit: int = 10) -> Optional[list]:
+        """Get recent generation history from KoboldCPP"""
+        # Note: This endpoint may vary by KoboldCPP version
+        # We'll try multiple approaches
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Try the story API first
+                async with session.get(f"{self.base_url}/api/latest/story", timeout=aiohttp.ClientTimeout(total=5)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get('results', [])
+                
+                # Fallback: Try getting model state
+                async with session.get(f"{self.base_url}/api/latest/model", timeout=aiohttp.ClientTimeout(total=5)) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return [data] if data else []
+                        
+        except Exception as e:
+            logger.debug(f"Could not fetch generation history: {e}")
+        
+        return None
+    
+    async def inject_context(self, text: str) -> bool:
+        """Inject text into KoboldCPP context (for returning tool results)"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                # Use the memory endpoint to inject context
+                payload = {"value": text}
+                async with session.post(
+                    f"{self.base_url}/api/extra/memory",
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as response:
+                    return response.status == 200
+        except Exception as e:
+            logger.error(f"Failed to inject context: {e}")
+            return False
+
     async def detect_tool_calls(self, text: str) -> list:
         """Parse text for potential tool calls (simple regex-based for now)"""
         import re

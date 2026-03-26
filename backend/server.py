@@ -24,6 +24,7 @@ from execution_engine import ExecutionEngine
 from logger_service import LoggerService
 from websocket_manager import WebSocketManager
 from approval_manager import ApprovalManager
+from kobold_monitor import KoboldMonitor
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -40,6 +41,16 @@ execution_engine = ExecutionEngine(db)
 logger_service = LoggerService(db)
 websocket_manager = WebSocketManager()
 approval_manager = ApprovalManager(db)
+
+# Initialize monitor (will start on app startup)
+kobold_monitor = KoboldMonitor(
+    kobold_client=kobold_client,
+    tool_manager=tool_manager,
+    execution_engine=execution_engine,
+    approval_manager=approval_manager,
+    logger_service=logger_service,
+    websocket_manager=websocket_manager
+)
 
 # Create the main app
 app = FastAPI(title="AI Tool Monitor API", version="1.0.0")
@@ -377,6 +388,46 @@ async def get_recent_logs(limit: int = 100):
 
 
 # ============================================
+# MONITOR ENDPOINTS
+# ============================================
+
+@api_router.get("/monitor/status")
+async def get_monitor_status():
+    """Get monitoring service status"""
+    return kobold_monitor.get_status()
+
+
+@api_router.post("/monitor/start")
+async def start_monitor():
+    """Start the KoboldCPP monitoring service"""
+    await kobold_monitor.start()
+    return {"message": "Monitor started", "status": kobold_monitor.get_status()}
+
+
+@api_router.post("/monitor/stop")
+async def stop_monitor():
+    """Stop the KoboldCPP monitoring service"""
+    await kobold_monitor.stop()
+    return {"message": "Monitor stopped", "status": kobold_monitor.get_status()}
+
+
+@api_router.post("/monitor/analyze")
+async def analyze_text(data: dict):
+    """Manually analyze text for tool patterns"""
+    text = data.get("text", "")
+    if not text:
+        raise HTTPException(status_code=400, detail="Text is required")
+    
+    analysis = await kobold_monitor.analyze_response(text, context_id="manual")
+    
+    if analysis.get("detected") and data.get("auto_create", False):
+        approval_id = await kobold_monitor.handle_detected_tool(analysis)
+        analysis["approval_id"] = approval_id
+    
+    return analysis
+
+
+# ============================================
 # WEBSOCKET ENDPOINT
 # ============================================
 
@@ -436,8 +487,12 @@ async def startup_event():
         model_info = await kobold_client.get_model_info()
         if model_info:
             logger.info(f"✅ Model loaded: {model_info.get('result', 'Unknown')}")
+        
+        # Auto-start monitor if KoboldCPP is connected
+        await kobold_monitor.start()
     else:
         logger.warning("⚠️  KoboldCPP not connected - make sure it's running on port 5001")
+        logger.info("💡 Monitor will auto-start when KoboldCPP connects")
     
     logger.info("✅ Database connected")
     logger.info("✅ All services initialized")
@@ -449,5 +504,9 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup on shutdown"""
     logger.info("Shutting down AI Tool Monitor...")
+    
+    # Stop monitor
+    await kobold_monitor.stop()
+    
     client.close()
     logger.info("Database connection closed")
