@@ -131,12 +131,16 @@ class ExecutionEngine:
                 grace_period=5
             )
             
-            # Map tool type to language
-            language_map = {
-                ToolType.SCRIPT: 'python',
-                ToolType.FUNCTION: 'python'
-            }
-            language = language_map.get(tool.type, 'python')
+            # Map tool type to language (use tool.language if available)
+            if hasattr(tool, 'language') and tool.language:
+                language = tool.language
+            else:
+                # Fallback to mapping by type for old tools
+                language_map = {
+                    ToolType.SCRIPT: 'python',
+                    ToolType.FUNCTION: 'python'
+                }
+                language = language_map.get(tool.type, 'python')
             
             # Execute using process manager
             exec_result = await self.process_manager.execute(

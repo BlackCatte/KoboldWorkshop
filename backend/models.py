@@ -58,6 +58,7 @@ class Tool(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str = Field(..., description="Tool name")
     type: ToolType = Field(..., description="Type of tool")
+    language: str = Field(default="python", description="Programming language")
     description: str = Field(default="", description="Tool description")
     code: str = Field(..., description="Tool code/script")
     config: ToolConfig = Field(default_factory=ToolConfig)
@@ -73,6 +74,7 @@ class ToolCreate(BaseModel):
     """Request to create a tool"""
     name: str
     type: ToolType
+    language: str = "python"
     description: str = ""
     code: str
     config: Optional[ToolConfig] = None

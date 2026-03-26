@@ -182,10 +182,11 @@ class KoboldMonitor:
             return None
         
         try:
-            # Create tool
+            # Create tool with detected language
             tool_data = ToolCreate(
                 name=analysis.get("tool_name", "ai_generated_tool"),
                 type=analysis.get("tool_type", ToolType.SCRIPT),
+                language=analysis.get("language", "python"),  # Use detected language
                 description=analysis.get("description", "AI-generated tool"),
                 code=analysis.get("code", "# No code provided"),
                 tags=["ai_generated", "monitored"]
