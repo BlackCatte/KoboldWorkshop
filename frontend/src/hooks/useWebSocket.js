@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const WS_URL = BACKEND_URL.replace('https://', 'wss://').replace('http://', 'ws://');
+
+// Properly construct WebSocket URL
+const getWebSocketURL = () => {
+  // If BACKEND_URL starts with https, use wss, otherwise ws
+  if (BACKEND_URL.startsWith('https://')) {
+    return BACKEND_URL.replace('https://', 'wss://') + '/ws';
+  } else if (BACKEND_URL.startsWith('http://')) {
+    return BACKEND_URL.replace('http://', 'ws://') + '/ws';
+  } else {
+    // Fallback for relative URLs
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}/ws`;
+  }
+};
+
+const WS_URL = getWebSocketURL();
 
 export const useWebSocket = (onMessage) => {
   const ws = useRef(null);
@@ -11,7 +26,8 @@ export const useWebSocket = (onMessage) => {
 
   const connect = useCallback(() => {
     try {
-      ws.current = new WebSocket(`${WS_URL}/ws`);
+      console.log('Connecting to WebSocket:', WS_URL);
+      ws.current = new WebSocket(WS_URL);
 
       ws.current.onopen = () => {
         console.log('✅ WebSocket connected');

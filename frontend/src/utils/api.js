@@ -27,7 +27,8 @@ export const getExecutions = (params) => api.get('/executions', { params });
 export const getExecution = (id) => api.get(`/executions/${id}`);
 export const createExecution = (data) => api.post('/executions', data);
 export const executeToolNow = (id) => api.post(`/executions/${id}/execute`);
-export const cancelExecution = (id) => api.post(`/executions/${id}/cancel`);
+export const cancelExecution = (id, data) => api.post(`/executions/${id}/cancel`, data);
+export const getExecutionStatistics = () => api.get('/executions/statistics/summary');
 
 // Approvals
 export const getApprovals = (params) => api.get('/approvals', { params });

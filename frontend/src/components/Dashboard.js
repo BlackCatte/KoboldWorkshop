@@ -3,6 +3,7 @@ import useWebSocket from '../hooks/useWebSocket';
 import SystemStatus from './SystemStatus';
 import ApprovalQueue from './ApprovalQueue';
 import LogViewer from './LogViewer';
+import ExecutionMonitor from './ExecutionMonitor';
 
 const Dashboard = () => {
   const [notifications, setNotifications] = useState([]);
@@ -102,6 +103,9 @@ const Dashboard = () => {
           <div className="lg:col-span-2 space-y-6">
             {/* Approval Queue */}
             <ApprovalQueue onUpdate={() => console.log('Approval updated')} />
+            
+            {/* Execution Monitor */}
+            <ExecutionMonitor wsMessage={lastMessage} />
           </div>
         </div>
 
