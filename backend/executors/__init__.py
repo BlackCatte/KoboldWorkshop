@@ -13,6 +13,8 @@ from .base_executor import (
     ExecutionStatus
 )
 from .python_executor import PythonExecutor
+from .javascript_executor import JavaScriptExecutor
+from .bash_executor import BashExecutor
 from .process_manager import ProcessManager
 
 __all__ = [
@@ -24,5 +26,7 @@ __all__ = [
     'TerminationMethod',
     'ExecutionStatus',
     'PythonExecutor',
+    'JavaScriptExecutor',
+    'BashExecutor',
     'ProcessManager'
 ]

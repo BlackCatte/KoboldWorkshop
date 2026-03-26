@@ -35,15 +35,23 @@ class ProcessManager:
     
     def __init__(self):
         # Initialize all executors
+        from .javascript_executor import JavaScriptExecutor
+        from .bash_executor import BashExecutor
+        
         self.executors: Dict[str, BaseExecutor] = {
             'python': PythonExecutor(),
             'script': PythonExecutor(),  # Alias for compatibility
+            'javascript': JavaScriptExecutor(),
+            'js': JavaScriptExecutor(),  # Alias
+            'bash': BashExecutor(),
+            'shell': BashExecutor(),  # Alias
+            'sh': BashExecutor(),  # Alias
         }
         
         # Track all executions across all executors
         self.execution_history: List[Dict[str, Any]] = []
         
-        logger.info(f"ProcessManager initialized with executors: {list(self.executors.keys())}")
+        logger.info(f"ProcessManager initialized with executors: {list(set(self.executors.values()))}")
     
     def register_executor(self, language: str, executor: BaseExecutor):
         """Register a new executor for a language"""
