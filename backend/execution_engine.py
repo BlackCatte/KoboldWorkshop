@@ -10,16 +10,24 @@ from models import (
     ResourceUsage, Tool, ToolType
 )
 
+# Import new executor architecture
+from executors.process_manager import ProcessManager
+from executors.base_executor import ResourceLimits, ShutdownConfig, TerminationMethod
+
 logger = logging.getLogger(__name__)
 
 
 class ExecutionEngine:
-    """Manages tool execution (basic version without Docker for now)"""
+    """Manages tool execution using new multi-executor architecture"""
     
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
         self.collection = db.executions
         self.active_executions: Dict[str, asyncio.Task] = {}
+        
+        # Initialize the new process manager
+        self.process_manager = ProcessManager()
+        logger.info("ExecutionEngine initialized with ProcessManager")
     
     async def create_execution(self, exec_data: ExecutionCreate) -> Execution:
         """Create a new execution record"""
@@ -102,22 +110,56 @@ class ExecutionEngine:
         )
     
     async def execute_tool(self, tool: Tool, execution: Execution) -> Dict[str, Any]:
-        """Execute a tool (basic Python execution for now)"""
+        """Execute a tool using new process manager"""
         
-        logger.info(f"Executing tool {tool.name} (ID: {tool.id})")
+        logger.info(f"Executing tool {tool.name} (ID: {tool.id}) using ProcessManager")
         await self.update_execution_status(execution.id, ExecutionStatus.RUNNING)
         await self.add_log(execution.id, f"Started execution of tool: {tool.name}")
         
         try:
-            if tool.type == ToolType.SCRIPT:
-                result = await self._execute_python_script(tool, execution)
-            elif tool.type == ToolType.FUNCTION:
-                result = await self._execute_function(tool, execution)
-            else:
-                result = {
-                    "success": False,
-                    "error": f"Tool type {tool.type} not yet supported"
+            # Prepare resource limits from tool config
+            resource_limits = ResourceLimits(
+                max_memory_mb=tool.config.max_memory_mb,
+                max_cpu_percent=tool.config.max_cpu_percent,
+                max_execution_time=tool.config.timeout,
+                network_enabled=tool.config.network_enabled
+            )
+            
+            # Prepare shutdown config
+            shutdown_config = ShutdownConfig(
+                method=TerminationMethod.GRACEFUL,
+                grace_period=5
+            )
+            
+            # Map tool type to language
+            language_map = {
+                ToolType.SCRIPT: 'python',
+                ToolType.FUNCTION: 'python'
+            }
+            language = language_map.get(tool.type, 'python')
+            
+            # Execute using process manager
+            exec_result = await self.process_manager.execute(
+                execution_id=execution.id,
+                code=tool.code,
+                language=language,
+                input_data=execution.input_data,
+                resource_limits=resource_limits,
+                shutdown_config=shutdown_config,
+                environment_vars=tool.config.environment_vars
+            )
+            
+            # Convert to our result format
+            result = {
+                "success": exec_result.success,
+                "output": exec_result.output,
+                "error": exec_result.error,
+                "exit_code": exec_result.exit_code,
+                "resource_usage": {
+                    "duration_seconds": exec_result.resource_usage.duration_seconds,
+                    "peak_memory_mb": exec_result.resource_usage.peak_memory_mb
                 }
+            }
             
             if result.get('success'):
                 await self.update_execution_status(
@@ -250,9 +292,39 @@ class ExecutionEngine:
                 "error": str(e)
             }
     
-    async def cancel_execution(self, execution_id: str) -> bool:
-        """Cancel a running execution"""
+    async def cancel_execution(self, execution_id: str, method: str = 'graceful') -> bool:
+        """
+        Cancel a running execution using new process manager
         
+        Args:
+            execution_id: ID of execution to cancel
+            method: Termination method ('graceful', 'immediate', 'custom')
+        
+        Returns:
+            True if successfully cancelled
+        """
+        
+        # Map string method to enum
+        method_map = {
+            'graceful': TerminationMethod.GRACEFUL,
+            'immediate': TerminationMethod.IMMEDIATE,
+            'custom': TerminationMethod.CUSTOM
+        }
+        term_method = method_map.get(method, TerminationMethod.GRACEFUL)
+        
+        # Try to terminate using process manager
+        terminated = await self.process_manager.terminate(execution_id, term_method)
+        
+        if terminated:
+            await self.update_execution_status(
+                execution_id,
+                ExecutionStatus.CANCELLED
+            )
+            await self.add_log(execution_id, f"Execution cancelled by user ({method} termination)")
+            logger.info(f"Cancelled execution: {execution_id}")
+            return True
+        
+        # Fallback to old method for backward compatibility
         if execution_id in self.active_executions:
             task = self.active_executions[execution_id]
             task.cancel()
@@ -262,12 +334,21 @@ class ExecutionEngine:
                 execution_id,
                 ExecutionStatus.CANCELLED
             )
-            await self.add_log(execution_id, "Execution cancelled by user")
+            await self.add_log(execution_id, "Execution cancelled by user (legacy method)")
             
-            logger.info(f"Cancelled execution: {execution_id}")
+            logger.info(f"Cancelled execution (legacy): {execution_id}")
             return True
         
+        logger.warning(f"No active execution found to cancel: {execution_id}")
         return False
+    
+    async def get_active_executions_info(self):
+        """Get info about all active executions"""
+        return self.process_manager.get_active_executions()
+    
+    async def get_execution_statistics(self):
+        """Get execution statistics"""
+        return self.process_manager.get_statistics()
     
     async def get_recent_executions(self, limit: int = 50):
         """Get recent executions"""

@@ -220,14 +220,65 @@ async def execute_tool_endpoint(execution_id: str):
 
 
 @api_router.post("/executions/{execution_id}/cancel")
-async def cancel_execution(execution_id: str):
-    """Cancel a running execution"""
-    success = await execution_engine.cancel_execution(execution_id)
+async def cancel_execution(execution_id: str, data: dict = None):
+    """
+    Cancel a running execution
+    
+    Optional body:
+    {
+        "method": "graceful" | "immediate" | "custom"
+    }
+    """
+    method = data.get('method', 'graceful') if data else 'graceful'
+    
+    success = await execution_engine.cancel_execution(execution_id, method=method)
     if not success:
         raise HTTPException(status_code=404, detail="Execution not found or not running")
     
     await websocket_manager.broadcast_execution_status(execution_id, "cancelled")
-    return {"message": "Execution cancelled"}
+    return {"message": f"Execution cancelled ({method})", "execution_id": execution_id}
+
+
+@api_router.get("/executions/active/list")
+async def get_active_executions():
+    """Get all currently active executions"""
+    active = await execution_engine.get_active_executions_info()
+    return {"active_executions": active, "count": len(active)}
+
+
+@api_router.get("/executions/statistics/summary")
+async def get_execution_statistics():
+    """Get execution statistics"""
+    stats = await execution_engine.get_execution_statistics()
+    return stats
+
+
+@api_router.post("/executions/terminate/all")
+async def terminate_all_executions(data: dict = None):
+    """Emergency: Terminate all running executions"""
+    method = data.get('method', 'graceful') if data else 'graceful'
+    
+    # Map to TerminationMethod
+    from executors.base_executor import TerminationMethod
+    method_map = {
+        'graceful': TerminationMethod.GRACEFUL,
+        'immediate': TerminationMethod.IMMEDIATE
+    }
+    term_method = method_map.get(method, TerminationMethod.GRACEFUL)
+    
+    results = await execution_engine.process_manager.terminate_all(term_method)
+    
+    await websocket_manager.broadcast({
+        "type": "emergency_shutdown",
+        "terminated_count": len(results),
+        "method": method
+    })
+    
+    return {
+        "message": "All executions terminated",
+        "count": len(results),
+        "results": results
+    }
 
 
 # ============================================
